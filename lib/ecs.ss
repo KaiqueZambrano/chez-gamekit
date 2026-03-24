@@ -4,36 +4,24 @@
 ;;;; GLOBAL STATE
 ;;;; ============================================================
 
-(define entities        (make-eq-hashtable))
-
-(define component-defs  (make-eq-hashtable))
-
-(define systems         '())
-
-(define event-types     '())
-(define event-queue     '())
-
-(define event-handlers         '())
-(define global-event-handlers  '())
-
-(define scenes         '())
-(define current-scene  #f)
-
-(define *next-id* 0)
-
-(define (new-id)
-  (set! *next-id* (+ *next-id* 1))
-  *next-id*)
+(define entities              (make-eq-hashtable))
+(define component-defs        (make-eq-hashtable))
+(define systems               '())
+(define event-queue           '())
+(define event-handlers        '())
+(define global-event-handlers '())
+(define scenes                '())
+(define current-scene         #f)
+(define next-id               0)
 
 ;;;; ============================================================
 ;;;; INTERNAL HELPERS
 ;;;; ============================================================
 
 (define (hashtable-for-each ht proc)
-  (vector-for-each
-    (lambda (k v) (proc k v))
-    (hashtable-keys ht)
-    (hashtable-values ht)))
+  (vector-for-each proc
+                   (hashtable-keys   ht)
+                   (hashtable-values ht)))
 
 (define (entity-ref id)
   (hashtable-ref entities id #f))
@@ -42,8 +30,12 @@
   (let ((e (entity-ref id)))
     (and e (hashtable-ref e comp-name #f))))
 
+(define (next-id!)
+  (set! next-id (+ next-id 1))
+  next-id)
+
 ;;;; ============================================================
-;;;; COMPONENT DEFINITION
+;;;; COMPONENT
 ;;;; ============================================================
 
 (define-syntax component
@@ -57,6 +49,11 @@
   (let* ((fields (hashtable-ref component-defs comp-name
                    (lambda () (error "unknown component" comp-name))))
          (ht     (make-eq-hashtable)))
+    (unless (= (length field-vals) (length fields))
+      (error "make-component: wrong number of fields for component"
+             comp-name
+             (string-append "expected " (number->string (length fields))
+                            ", got "    (number->string (length field-vals)))))
     (for-each (lambda (f)
                 (let ((given (assq f field-vals)))
                   (hashtable-set! ht f (if given (cadr given) #f))))
@@ -64,12 +61,12 @@
     ht))
 
 ;;;; ============================================================
-;;;; ENTITY CREATION / DESTRUCTION
+;;;; ENTITY
 ;;;; ============================================================
 
 (define (make-entity comp-list)
-  (let ((id  (new-id))
-        (ht  (make-eq-hashtable)))
+  (let ((id (next-id!))
+        (ht (make-eq-hashtable)))
     (for-each (lambda (pair)
                 (hashtable-set! ht (car pair) (cdr pair)))
               comp-list)
@@ -114,11 +111,15 @@
   (syntax-rules ()
     ((_ id comp)
      (let ((e (entity-ref id)))
-       (hashtable-set! e 'comp (make-component 'comp '()))))
+       (if e
+           (hashtable-set! e 'comp (make-component 'comp '()))
+           (error "add-component: entity not found" id))))
     ((_ id comp (field val) ...)
      (let ((e (entity-ref id)))
-       (hashtable-set! e 'comp
-         (make-component 'comp (list (list 'field val) ...)))))))
+       (if e
+           (hashtable-set! e 'comp
+             (make-component 'comp (list (list 'field val) ...)))
+           (error "add-component: entity not found" id))))))
 
 (define-syntax remove-component
   (syntax-rules ()
@@ -147,8 +148,8 @@
 
 (define-syntax get
   (syntax-rules ()
-    ((_ comp field)       (comp-get  comp     'field))
-    ((_ id comp field)    (field-get id 'comp 'field))))
+    ((_ comp field)     (comp-get  comp     'field))
+    ((_ id comp field)  (field-get id 'comp 'field))))
 
 (define-syntax put!
   (syntax-rules ()
@@ -199,17 +200,27 @@
 ;;;; EVENTS
 ;;;; ============================================================
 
+(define event-defs (make-eq-hashtable))
+
 (define-syntax event
   (syntax-rules ()
     ((_ name (field ...))
-     (set! event-types (cons '(name field ...) event-types)))))
+     (hashtable-set! event-defs 'name '(field ...)))))
 
 (define-syntax emit
   (syntax-rules ()
     ((_ name (field val) ...)
-     (set! event-queue
-           (append event-queue
-                   (list (list 'name (list 'field val) ...)))))))
+     (begin
+       (let ((expected (hashtable-ref event-defs 'name #f)))
+         (when expected
+           (let ((given '(field ...)))
+             (unless (equal? (list->vector (sort given symbol<?))
+                             (list->vector (sort expected symbol<?)))
+               (error "emit: wrong fields for event" 'name
+                      (string-append "expected " (symbol->string (car expected))))))))
+       (set! event-queue
+             (append event-queue
+                     (list (list 'name (list 'field val) ...))))))))
 
 (define-syntax on
   (syntax-rules ()
@@ -226,17 +237,18 @@
                    (list (cons 'name (lambda (field ...) body ...))))))))
 
 (define (dispatch)
-  (for-each
-    (lambda (ev)
-      (let ((ev-name (car ev))
-            (args    (map cadr (cdr ev))))
-        (for-each
-          (lambda (h)
-            (when (eq? (car h) ev-name)
-              (apply (cdr h) args)))
-          (append event-handlers global-event-handlers))))
-    event-queue)
-  (set! event-queue '()))
+  (let ((current-queue event-queue))
+    (set! event-queue '())
+    (for-each
+      (lambda (ev)
+        (let ((ev-name (car ev))
+              (args    (map cadr (cdr ev))))
+          (for-each
+            (lambda (h)
+              (when (eq? (car h) ev-name)
+                (apply (cdr h) args)))
+            (append event-handlers global-event-handlers))))
+      current-queue)))
 
 ;;;; ============================================================
 ;;;; SCENE
@@ -253,27 +265,32 @@
                                (lambda () enter-body ...)
                                (lambda () exit-body  ...))))))))
 
-(define (go-to name)
+(define (go-to* name)
   (when current-scene
     (let ((cur (assoc current-scene scenes)))
       (when cur ((caddr cur)))))
 
-  (set! systems         '())
-  (set! event-handlers  '())
-  (set! event-queue     '())
+  (set! systems               '())
+  (set! event-handlers        '())
+  (set! global-event-handlers '())
+  (set! event-queue           '())
 
   (let ((to-remove '()))
     (hashtable-for-each entities
       (lambda (id comp-ht)
         (unless (hashtable-contains? comp-ht 'persistent)
           (set! to-remove (cons id to-remove)))))
-    (for-each (lambda (id) (hashtable-delete! entities id)) to-remove))
+    (for-each despawn to-remove))
 
   (set! current-scene name)
   (let ((next (assoc name scenes)))
     (if next
         ((cadr next))
         (error "scene not found" name))))
+
+(define-syntax go-to
+  (syntax-rules ()
+    ((_ name) (go-to* 'name))))
 
 ;;;; ============================================================
 ;;;; RUN

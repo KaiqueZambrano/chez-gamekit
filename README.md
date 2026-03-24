@@ -10,11 +10,25 @@ Built for personal use — simple 2D games. No package system, no dependencies b
 
 ## Usage
 
+Load everything at once:
+
+```scheme
+(load "chez-gamekit.ss")
+```
+
+Or pick individual modules:
+
 ```scheme
 (load "lib/raylib.ss")
+(load "lib/json.ss")
 (load "lib/ecs.ss")
-(load "lib/engine.ss")  ; optional — assets, animation, game loop
+(load "lib/assets.ss")      ; asset cache
+(load "lib/animation.ss")   ; sprite animation — requires ecs.ss + assets.ss
+(load "lib/game-loop.ss")   ; dt + game-loop — requires ecs.ss + raylib.ss
+(load "lib/tilemap.ss")     ; Tiled JSON tilemaps — requires json.ss + assets.ss + raylib.ss
 ```
+
+Load order matters when loading individually — each module requires the ones listed above it.
 
 ## raylib.ss
 
@@ -29,6 +43,16 @@ Covers the basics for 2D games:
 - Timing (`get-frame-time`, `get-time`, `get-fps`)
 
 Camera 2D, audio, and `draw-texture-pro` are included but **untested** — they were mapped manually from raylib's internal struct layout and may not work correctly across raylib versions.
+
+## json.ss
+
+A self-contained JSON parser. No dependencies.
+
+```scheme
+(json-load "data/level.json")   ; parses a file, returns an alist
+(json-parse "{\"x\": 1}")       ; parses a string
+(json-get obj "key")            ; looks up a key in a parsed object
+```
 
 ## ecs.ss
 
@@ -74,7 +98,7 @@ A minimal ECS with a DSL. Entities and components are stored in hashtables.
 
 (event hit (target damage))
 
-;;; on-global handlers persist across scenes
+;;; on-global handlers are cleared on go-to — register them outside scenes
 (on-global hit (target damage)
   (display (list 'hit player 'damage damage)) (newline))
 
@@ -98,10 +122,10 @@ A minimal ECS with a DSL. Entities and components are stored in hashtables.
   (on-exit
     (display "leaving gameplay") (newline)))
 
-(go-to 'main-menu)
+(go-to main-menu)
 (run)
 
-(go-to 'gameplay)
+(go-to gameplay)
 (run)
 (run)
 ```
@@ -125,7 +149,7 @@ A minimal ECS with a DSL. Entities and components are stored in hashtables.
 | `(has-component? id comp)` | Returns `#t` if entity has component |
 | `(system name ((var : comp) ...) body ...)` | Defines and registers a system |
 | `(system name ((var : comp) ...) not (excl ...) body ...)` | Same, with exclusions |
-| `(event name (field ...))` | Declares an event type |
+| `(event name (field ...))` | Declares an event type and validates `emit` calls against it |
 | `(emit name (field val) ...)` | Enqueues an event |
 | `(on name (field ...) body ...)` | Registers a scene-local event handler |
 | `(on-global name (field ...) body ...)` | Registers a persistent event handler |
@@ -137,14 +161,54 @@ Inside a system, `entity-id` is always bound to the current entity's id.
 
 `entity` only works at the top level — use `define` + `set!` + `spawn` inside `on-enter`.
 
-## engine.ss
+Events emitted during dispatch are enqueued and processed on the next `(run)` call, not the current one.
 
-Adds asset management, sprite animation, and a structured game loop on top of `ecs.ss` and `raylib.ss`.
+`go-to` clears systems, event handlers (local and global), and the event queue, then removes all non-`persistent` entities. Register `on-global` handlers outside scenes if they need to survive transitions.
+
+## assets.ss
+
+A simple asset cache keyed by symbol.
 
 ```scheme
-(load "lib/raylib.ss")
-(load "lib/ecs.ss")
-(load "lib/engine.ss")
+(load-asset player-idle "assets/idle.png")          ; loads and caches a texture
+(load-asset shoot-sfx "assets/shoot.wav" load-sound) ; custom loader
+(load-asset! tex-name path)                          ; dynamic symbol — same as above
+(get-asset player-idle)                              ; retrieves a cached asset by literal name
+(asset-ref name)                                     ; retrieves by runtime symbol
+(unload-asset player-idle)                           ; removes from cache
+```
+
+`load-asset` is a macro and requires a literal symbol. Use `load-asset!` when the name is a runtime value (e.g. inside a loop or when loading tilemaps).
+
+## animation.ss
+
+Sprite sheet animation built on top of the ECS.
+
+```scheme
+(component position (x y))
+
+(make-animation-system)         ; registers the frame-advance system
+(make-render-animation-system)  ; registers the draw system
+```
+
+Both systems must be called inside `on-enter` to register for the current scene. The render system expects a `position` component on the same entity.
+
+The `animation` component fields are: `texture` (asset name symbol), `frame-w`, `frame-h`, `frames`, `speed` (fps), `frame` (current, starts at 0), `elapsed` (starts at 0.0).
+
+## game-loop.ss
+
+Delta time and the main loop.
+
+| Form | Description |
+|---|---|
+| `dt` | Seconds elapsed since the last frame — updated every frame |
+| `(game-loop title w h fps)` | Opens a window and runs the main loop |
+| `(game-loop title w h fps init)` | Same, calls `init` thunk once before the loop starts |
+
+### Example
+
+```scheme
+(load "chez-gamekit.ss")
 
 (component position (x y))
 
@@ -152,7 +216,9 @@ Adds asset management, sprite animation, and a structured game loop on top of `e
 
 (scene gameplay
   (on-enter
-    (load-asset 'hero "assets/hero.png")
+    (load-asset hero "assets/hero.png")
+    (make-animation-system)
+    (make-render-animation-system)
     (set! player (spawn
       (position 100 100)
       (animation hero 32 32 4 8 0 0.0)))
@@ -163,26 +229,27 @@ Adds asset management, sprite animation, and a structured game loop on top of `e
       (when (is-key-down key-up)    (put! pos y (- (get pos y) 2)))))
   (on-exit #f))
 
-;;; animation-system and render-animation-system are
-;;; pre-registered by engine.ss — no need to define them.
-
-(go-to 'gameplay)
-(game-loop "my game" 800 600 60)
+(game-loop "my game" 800 600 60
+  (lambda () (go-to gameplay)))
 ```
 
-### engine.ss API
+## tilemap.ss
 
-| Form | Description |
-|---|---|
-| `(load-asset name path)` | Loads a texture and caches it by name |
-| `(load-asset name path loader)` | Same, with a custom loader function |
-| `(get-asset name)` | Returns a cached asset |
-| `(unload-asset name)` | Removes an asset from the cache |
-| `*dt*` | Delta time for the current frame (updated every frame by `game-loop`) |
-| `(game-loop title w h fps)` | Opens window and runs the main loop |
-| `(game-loop title w h fps init)` | Same, calls `init` once before the loop |
+Loads and renders [Tiled](https://www.mapeditor.org/) maps exported as JSON. Supports tile layers and object layers.
 
-The `animation` component and its systems (`animation-system`, `render-animation-system`) are automatically available when `engine.ss` is loaded. The render system expects a `position` component on the same entity.
+```scheme
+(load-tilemap level1 "assets/level1.json")    ; loads map and all referenced tilesets
+(render-tilemap level1)                        ; draws all visible tile layers
+(render-tilemap level1 camera)                 ; same, wrapped in begin-mode-2d
+
+(tilemap-width  level1)    ; total pixel width
+(tilemap-height level1)    ; total pixel height
+
+(tilemap-objects level1)               ; all objects from all object layers
+(tilemap-objects level1 "spawns")      ; objects from a named layer only
+```
+
+Object accessors: `obj-x`, `obj-y`, `obj-width`, `obj-height`, `obj-name`, `obj-type`, `obj-id`.
 
 ## License
 

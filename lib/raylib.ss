@@ -1,4 +1,4 @@
-;;; raylib.ss — Raylib bindings for Chez Scheme
+;;; raylib.ss
 
 (load-shared-object "libraylib.so")
 
@@ -146,52 +146,50 @@
 ;;;; CORE FUNCTIONS
 ;;;; ============================================================
 
-(define init-window (foreign-procedure "InitWindow" (int int string) void))
-(define close-window (foreign-procedure "CloseWindow" () void))
-(define window-should-close (foreign-procedure "WindowShouldClose" () boolean))
-(define is-window-ready (foreign-procedure "IsWindowReady" () boolean))
-(define is-window-fullscreen (foreign-procedure "IsWindowFullscreen" () boolean))
-(define is-window-hidden (foreign-procedure "IsWindowHidden" () boolean))
-(define is-window-minimized (foreign-procedure "IsWindowMinimized" () boolean))
-(define is-window-maximized (foreign-procedure "IsWindowMaximized" () boolean))
-(define is-window-focused (foreign-procedure "IsWindowFocused" () boolean))
-(define is-window-resized (foreign-procedure "IsWindowResized" () boolean))
-(define set-window-title (foreign-procedure "SetWindowTitle" (string) void))
-(define set-window-position (foreign-procedure "SetWindowPosition" (int int) void))
-(define set-window-monitor (foreign-procedure "SetWindowMonitor" (int) void))
-(define set-window-min-size (foreign-procedure "SetWindowMinSize" (int int) void))
-(define set-window-size (foreign-procedure "SetWindowSize" (int int) void))
-(define get-screen-width (foreign-procedure "GetScreenWidth" () int))
-(define get-screen-height (foreign-procedure "GetScreenHeight" () int))
+(define init-window           (foreign-procedure "InitWindow"          (int int string) void))
+(define close-window          (foreign-procedure "CloseWindow"         () void))
+(define window-should-close   (foreign-procedure "WindowShouldClose"   () boolean))
+(define is-window-ready       (foreign-procedure "IsWindowReady"       () boolean))
+(define is-window-fullscreen  (foreign-procedure "IsWindowFullscreen"  () boolean))
+(define is-window-hidden      (foreign-procedure "IsWindowHidden"      () boolean))
+(define is-window-minimized   (foreign-procedure "IsWindowMinimized"   () boolean))
+(define is-window-maximized   (foreign-procedure "IsWindowMaximized"   () boolean))
+(define is-window-focused     (foreign-procedure "IsWindowFocused"     () boolean))
+(define is-window-resized     (foreign-procedure "IsWindowResized"     () boolean))
+(define set-window-title      (foreign-procedure "SetWindowTitle"      (string) void))
+(define set-window-position   (foreign-procedure "SetWindowPosition"   (int int) void))
+(define set-window-monitor    (foreign-procedure "SetWindowMonitor"    (int) void))
+(define set-window-min-size   (foreign-procedure "SetWindowMinSize"    (int int) void))
+(define set-window-size       (foreign-procedure "SetWindowSize"       (int int) void))
+(define get-screen-width      (foreign-procedure "GetScreenWidth"      () int))
+(define get-screen-height     (foreign-procedure "GetScreenHeight"     () int))
 
-(define set-target-fps (foreign-procedure "SetTargetFPS" (int) void))
-(define get-fps (foreign-procedure "GetFPS" () int))
-(define get-frame-time (foreign-procedure "GetFrameTime" () float))
-(define get-time (foreign-procedure "GetTime" () double))
+(define set-target-fps  (foreign-procedure "SetTargetFPS"  (int) void))
+(define get-fps         (foreign-procedure "GetFPS"        () int))
+(define get-frame-time  (foreign-procedure "GetFrameTime"  () float))
+(define get-time        (foreign-procedure "GetTime"       () double))
 
 ;;;; ============================================================
 ;;;; DRAWING FUNCTIONS
 ;;;; ============================================================
 
-(define clear-background (foreign-procedure "ClearBackground" ((& color)) void))
-(define begin-drawing (foreign-procedure "BeginDrawing" () void))
-(define end-drawing (foreign-procedure "EndDrawing" () void))
+(define clear-background    (foreign-procedure "ClearBackground"    ((& color)) void))
+(define begin-drawing       (foreign-procedure "BeginDrawing"       () void))
+(define end-drawing         (foreign-procedure "EndDrawing"         () void))
 
-(define begin-mode-2d (foreign-procedure "BeginMode2D" ((& camera2d)) void))
-(define end-mode-2d (foreign-procedure "EndMode2D" () void))
+(define begin-mode-2d  (foreign-procedure "BeginMode2D"  ((& camera2d)) void))
+(define end-mode-2d    (foreign-procedure "EndMode2D"    () void))
 
-;; Shapes
-(define draw-pixel (foreign-procedure "DrawPixel" (int int (& color)) void))
-(define draw-line (foreign-procedure "DrawLine" (int int int int (& color)) void))
-(define draw-circle (foreign-procedure "DrawCircle" (int int float (& color)) void))
-(define draw-rectangle (foreign-procedure "DrawRectangle" (int int int int (& color)) void))
-(define draw-rectangle-rec (foreign-procedure "DrawRectangleRec" ((& rectangle) (& color)) void))
-(define draw-rectangle-lines (foreign-procedure "DrawRectangleLines" (int int int int (& color)) void))
+(define draw-pixel           (foreign-procedure "DrawPixel"          (int int (& color)) void))
+(define draw-line            (foreign-procedure "DrawLine"            (int int int int (& color)) void))
+(define draw-circle          (foreign-procedure "DrawCircle"          (int int float (& color)) void))
+(define draw-rectangle       (foreign-procedure "DrawRectangle"       (int int int int (& color)) void))
+(define draw-rectangle-rec   (foreign-procedure "DrawRectangleRec"    ((& rectangle) (& color)) void))
+(define draw-rectangle-lines (foreign-procedure "DrawRectangleLines"  (int int int int (& color)) void))
 
-;; Text
-(define draw-fps (foreign-procedure "DrawFPS" (int int) void))
-(define draw-text (foreign-procedure "DrawText" (string int int int (& color)) void))
-(define measure-text (foreign-procedure "MeasureText" (string int) int))
+(define draw-fps   (foreign-procedure "DrawFPS"         (int int) void))
+(define draw-text  (foreign-procedure "DrawText"        (string int int int (& color)) void))
+(define measure-text (foreign-procedure "MeasureText"   (string int) int))
 
 ;;;; ============================================================
 ;;;; TEXTURE FUNCTIONS
@@ -203,33 +201,30 @@
     (load-texture-ffi tex path)
     tex))
 
-(define unload-texture (foreign-procedure "UnloadTexture" ((& texture2d)) void))
-
-(define draw-texture (foreign-procedure "DrawTexture" ((& texture2d) int int (& color)) void))
-(define draw-texture-rec (foreign-procedure "DrawTextureRec" ((& texture2d) (& rectangle) (& vector2) (& color)) void))
-(define draw-texture-pro (foreign-procedure "DrawTexturePro" ((& texture2d) (& rectangle) (& rectangle) (& vector2) float (& color)) void))
+(define unload-texture    (foreign-procedure "UnloadTexture"    ((& texture2d)) void))
+(define draw-texture      (foreign-procedure "DrawTexture"      ((& texture2d) int int (& color)) void))
+(define draw-texture-rec  (foreign-procedure "DrawTextureRec"   ((& texture2d) (& rectangle) (& vector2) (& color)) void))
+(define draw-texture-pro  (foreign-procedure "DrawTexturePro"   ((& texture2d) (& rectangle) (& rectangle) (& vector2) float (& color)) void))
 
 ;;;; ============================================================
 ;;;; INPUT FUNCTIONS
 ;;;; ============================================================
 
-;; Keyboard
-(define is-key-pressed (foreign-procedure "IsKeyPressed" (int) boolean))
-(define is-key-down (foreign-procedure "IsKeyDown" (int) boolean))
-(define is-key-released (foreign-procedure "IsKeyReleased" (int) boolean))
-(define is-key-up (foreign-procedure "IsKeyUp" (int) boolean))
-(define set-exit-key (foreign-procedure "SetExitKey" (int) void))
-(define get-key-pressed (foreign-procedure "GetKeyPressed" () int))
-(define get-char-pressed (foreign-procedure "GetCharPressed" () int))
+(define is-key-pressed    (foreign-procedure "IsKeyPressed"   (int) boolean))
+(define is-key-down       (foreign-procedure "IsKeyDown"      (int) boolean))
+(define is-key-released   (foreign-procedure "IsKeyReleased"  (int) boolean))
+(define is-key-up         (foreign-procedure "IsKeyUp"        (int) boolean))
+(define set-exit-key      (foreign-procedure "SetExitKey"     (int) void))
+(define get-key-pressed   (foreign-procedure "GetKeyPressed"  () int))
+(define get-char-pressed  (foreign-procedure "GetCharPressed" () int))
 
-;; Mouse
-(define is-mouse-button-pressed (foreign-procedure "IsMouseButtonPressed" (int) boolean))
-(define is-mouse-button-down (foreign-procedure "IsMouseButtonDown" (int) boolean))
-(define is-mouse-button-released (foreign-procedure "IsMouseButtonReleased" (int) boolean))
-(define is-mouse-button-up (foreign-procedure "IsMouseButtonUp" (int) boolean))
-(define get-mouse-x (foreign-procedure "GetMouseX" () int))
-(define get-mouse-y (foreign-procedure "GetMouseY" () int))
-(define get-mouse-position-ffi (foreign-procedure "GetMousePosition" () (& vector2)))
+(define is-mouse-button-pressed   (foreign-procedure "IsMouseButtonPressed"   (int) boolean))
+(define is-mouse-button-down      (foreign-procedure "IsMouseButtonDown"      (int) boolean))
+(define is-mouse-button-released  (foreign-procedure "IsMouseButtonReleased"  (int) boolean))
+(define is-mouse-button-up        (foreign-procedure "IsMouseButtonUp"        (int) boolean))
+(define get-mouse-x               (foreign-procedure "GetMouseX"              () int))
+(define get-mouse-y               (foreign-procedure "GetMouseY"              () int))
+(define get-mouse-position-ffi    (foreign-procedure "GetMousePosition"       () (& vector2)))
 (define (get-mouse-position)
   (let ([v (make-ftype-pointer vector2 (foreign-alloc (ftype-sizeof vector2)))])
     (get-mouse-position-ffi v)
@@ -239,22 +234,22 @@
 ;;;; AUDIO FUNCTIONS
 ;;;; ============================================================
 
-(define init-audio-device (foreign-procedure "InitAudioDevice" () void))
-(define close-audio-device (foreign-procedure "CloseAudioDevice" () void))
+(define init-audio-device    (foreign-procedure "InitAudioDevice"    () void))
+(define close-audio-device   (foreign-procedure "CloseAudioDevice"   () void))
 (define is-audio-device-ready (foreign-procedure "IsAudioDeviceReady" () boolean))
-(define set-master-volume (foreign-procedure "SetMasterVolume" (float) void))
+(define set-master-volume    (foreign-procedure "SetMasterVolume"    (float) void))
 
-(define load-sound-ffi (foreign-procedure "LoadSound" (string) (& sound)))
+(define load-sound-ffi  (foreign-procedure "LoadSound"  (string) (& sound)))
 (define (load-sound path)
   (let ([s (make-ftype-pointer sound (foreign-alloc (ftype-sizeof sound)))])
     (load-sound-ffi s path)
     s))
 
-(define unload-sound (foreign-procedure "UnloadSound" ((& sound)) void))
-(define play-sound (foreign-procedure "PlaySound" ((& sound)) void))
-(define stop-sound (foreign-procedure "StopSound" ((& sound)) void))
-(define pause-sound (foreign-procedure "PauseSound" ((& sound)) void))
-(define resume-sound (foreign-procedure "ResumeSound" ((& sound)) void))
+(define unload-sound    (foreign-procedure "UnloadSound"    ((& sound)) void))
+(define play-sound      (foreign-procedure "PlaySound"      ((& sound)) void))
+(define stop-sound      (foreign-procedure "StopSound"      ((& sound)) void))
+(define pause-sound     (foreign-procedure "PauseSound"     ((& sound)) void))
+(define resume-sound    (foreign-procedure "ResumeSound"    ((& sound)) void))
 (define is-sound-playing (foreign-procedure "IsSoundPlaying" ((& sound)) boolean))
 
 ;;;; ============================================================
