@@ -1,7 +1,6 @@
 # chez-gamekit
 
-Raylib bindings, an ECS with a small DSL, and a game engine layer for Chez Scheme.
-Built for personal use — simple 2D games. No package system, no dependencies beyond Chez Scheme and raylib.
+Raylib bindings, an ECS, and game utilities for Chez Scheme. Built for personal use — simple 2D games.
 
 ## Requirements
 
