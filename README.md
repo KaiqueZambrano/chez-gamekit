@@ -42,6 +42,8 @@ Covers the basics for 2D games:
 - Audio (`load-sound`, `play-sound`, `pause-sound`, `resume-sound`, `is-sound-playing`)
 - Timing (`get-frame-time`, `get-time`, `get-fps`)
 
+Foreign memory (`make-vec2`, `make-rect`, `make-color`, `make-camera2d`) is managed automatically via a guardian and a background GC thread — no manual `free-ptr` calls needed in normal use. `free-ptr` remains available for explicit early release if needed.
+
 Camera 2D, audio, and `draw-texture-pro` are included but **untested** — they were mapped manually from raylib's internal struct layout and may not work correctly across raylib versions.
 
 ## json.ss
@@ -52,6 +54,14 @@ A self-contained JSON parser. No dependencies.
 (json-load "data/level.json")   ; parses a file, returns an alist
 (json-parse "{\"x\": 1}")       ; parses a string
 (json-get obj "key")            ; looks up a key in a parsed object
+```
+
+JSON `null` is represented as the symbol `'null` (not `#f`) to distinguish it from missing keys. Use the provided predicates to check values:
+
+```scheme
+(json-null?  v)   ; #t if v is JSON null
+(json-false? v)   ; #t if v is JSON false
+(json-value? v)   ; #t if v is anything other than #f (i.e. key was present)
 ```
 
 ## ecs.ss
@@ -149,6 +159,7 @@ A minimal ECS with a DSL. Entities and components are stored in hashtables.
 | `(has-component? id comp)` | Returns `#t` if entity has component |
 | `(system name ((var : comp) ...) body ...)` | Defines and registers a system |
 | `(system name ((var : comp) ...) not (excl ...) body ...)` | Same, with exclusions |
+| `(global-system name body ...)` | Registers a system that runs once per frame, without iterating entities |
 | `(event name (field ...))` | Declares an event type and validates `emit` calls against it |
 | `(emit name (field val) ...)` | Enqueues an event |
 | `(on name (field ...) body ...)` | Registers a scene-local event handler |
@@ -161,37 +172,37 @@ Inside a system, `entity-id` is always bound to the current entity's id.
 
 `entity` only works at the top level — use `define` + `set!` + `spawn` inside `on-enter`.
 
+Systems and handlers run in registration order (the order they were defined inside `on-enter`).
+
 Events emitted during dispatch are enqueued and processed on the next `(run)` call, not the current one.
 
-`go-to` clears systems, event handlers (local and global), and the event queue, then removes all non-`persistent` entities. Register `on-global` handlers outside scenes if they need to survive transitions.
+`go-to` clears systems, global systems, event handlers (local and global), and the event queue, then removes all non-`persistent` entities. Register `on-global` handlers outside scenes if they need to survive transitions.
 
 ## assets.ss
 
-A simple asset cache keyed by symbol.
+An asset cache keyed by symbol. Each entry stores the asset value alongside its unloader, so `unload-asset` always calls the right cleanup function automatically.
 
 ```scheme
-(load-asset player-idle "assets/idle.png")          ; loads and caches a texture
-(load-asset shoot-sfx "assets/shoot.wav" load-sound) ; custom loader
-(load-asset! tex-name path)                          ; dynamic symbol — same as above
-(get-asset player-idle)                              ; retrieves a cached asset by literal name
-(asset-ref name)                                     ; retrieves by runtime symbol
-(unload-asset player-idle)                           ; removes from cache
+(load-asset player-idle "assets/idle.png")                        ; loads and caches a texture
+(load-asset shoot-sfx "assets/shoot.wav" load-sound unload-sound) ; custom loader + unloader
+(load-asset! tex-name path)                                        ; dynamic symbol — same as above
+(get-asset player-idle)                                            ; retrieves by literal name
+(asset-ref name)                                                   ; retrieves by runtime symbol
+(unload-asset player-idle)                                         ; calls unloader and removes from cache
 ```
 
-`load-asset` is a macro and requires a literal symbol. Use `load-asset!` when the name is a runtime value (e.g. inside a loop or when loading tilemaps).
+`load-asset` is a macro and requires a literal symbol. Use `load-asset!` when the name is a runtime value (e.g. inside a loop or when loading tilemaps). The default loader is `load-texture` and the default unloader is `unload-texture`.
 
 ## animation.ss
 
 Sprite sheet animation built on top of the ECS.
 
 ```scheme
-(component position (x y))
-
 (make-animation-system)         ; registers the frame-advance system
 (make-render-animation-system)  ; registers the draw system
 ```
 
-Both systems must be called inside `on-enter` to register for the current scene. The render system expects a `position` component on the same entity.
+Both must be called inside `on-enter` to register for the current scene. The render system expects a `position` component on the same entity.
 
 The `animation` component fields are: `texture` (asset name symbol), `frame-w`, `frame-h`, `frames`, `speed` (fps), `frame` (current, starts at 0), `elapsed` (starts at 0.0).
 
@@ -205,12 +216,12 @@ Delta time and the main loop.
 | `(game-loop title w h fps)` | Opens a window and runs the main loop |
 | `(game-loop title w h fps init)` | Same, calls `init` thunk once before the loop starts |
 
+The window and audio device are always closed cleanly on exit, even if an error is raised during the loop.
+
 ### Example
 
 ```scheme
 (load "chez-gamekit.ss")
-
-(component position (x y))
 
 (define player #f)
 
@@ -226,11 +237,15 @@ Delta time and the main loop.
       (when (is-key-down key-right) (put! pos x (+ (get pos x) 2)))
       (when (is-key-down key-left)  (put! pos x (- (get pos x) 2)))
       (when (is-key-down key-down)  (put! pos y (+ (get pos y) 2)))
-      (when (is-key-down key-up)    (put! pos y (- (get pos y) 2)))))
+      (when (is-key-down key-up)    (put! pos y (- (get pos y) 2))))
+    (global-system render-bg
+      (render-tilemap world)))
   (on-exit #f))
 
 (game-loop "my game" 800 600 60
-  (lambda () (go-to gameplay)))
+  (lambda ()
+    (load-tilemap world "assets/world.json")
+    (go-to gameplay)))
 ```
 
 ## tilemap.ss
