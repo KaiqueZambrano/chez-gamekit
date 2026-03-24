@@ -191,7 +191,7 @@ An asset cache keyed by symbol. Each entry stores the asset value alongside its 
 (asset-ref name)                                                    ; retrieves by runtime symbol
 (unload-asset player-idle)                                          ; calls unloader and removes from cache
 (unload-all-assets!)                                                ; unloads everything
-(unload-assets-except! 'ui-font 'cursor)                            ; unloads all except the listed names
+(unload-assets-except! ui-font cursor)                              ; unloads all except the listed names
 ```
 
 `load-asset` is a macro and requires a literal symbol. Use `load-asset!` when the name is a runtime value (e.g. inside a loop or when loading tilemaps). The default loader is `load-texture` and the default unloader is `unload-texture`.
