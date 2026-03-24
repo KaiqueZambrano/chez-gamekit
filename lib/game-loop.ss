@@ -7,6 +7,23 @@
 (define dt 0.0)
 
 ;;;; ============================================================
+;;;; TEXT INPUT
+;;;; ============================================================
+
+(define text-input-buffer "")
+
+(define (flush-text-input!)
+  (let loop ((c (get-char-pressed)))
+    (when (> c 0)
+      (set! text-input-buffer
+            (string-append text-input-buffer
+                           (string (integer->char c))))
+      (loop (get-char-pressed)))))
+
+(define (text-input)
+  text-input-buffer)
+
+;;;; ============================================================
 ;;;; GAME LOOP
 ;;;; ============================================================
 
@@ -22,6 +39,7 @@
         (let loop ()
           (unless (window-should-close)
             (set! dt (get-frame-time))
+            (flush-text-input!)
             (begin-drawing)
             (clear-background raywhite)
             (run)

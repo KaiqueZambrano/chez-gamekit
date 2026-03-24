@@ -9,9 +9,11 @@
 (gamekit-load "json.ss")
 (gamekit-load "ecs.ss")
 (gamekit-load "assets.ss")
+(gamekit-load "camera.ss")
 (gamekit-load "animation.ss")
 (gamekit-load "game-loop.ss")
 (gamekit-load "tilemap.ss")
 
 ; Required for animations
 (component position (x y))
+

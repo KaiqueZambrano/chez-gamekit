@@ -110,7 +110,7 @@
 (define-syntax render-tilemap
   (syntax-rules ()
     ((_ name)
-     (render-tilemap name #f))
+     (render-tilemap name current-camera))
     ((_ name cam)
      (let* ((m      (hashtable-ref tilemaps 'name
                       (lambda () (error "tilemap not loaded" 'name))))

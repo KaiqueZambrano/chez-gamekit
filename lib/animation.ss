@@ -4,7 +4,7 @@
 ;;;; COMPONENT
 ;;;; ============================================================
 
-(component animation (texture frame-w frame-h frames speed frame elapsed))
+(component animation (texture frame-w frame-h row frames speed scale-x scale-y frame elapsed))
 
 ;;;; ============================================================
 ;;;; FRAME UPDATE
@@ -31,11 +31,26 @@
 (define (make-render-animation-system)
   (system render-animation-system
     ((anim : animation) (pos : position))
-    (let* ((tex   (asset-ref (get anim texture)))
-           (fw    (get anim frame-w))
-           (fh    (get anim frame-h))
-           (frame (get anim frame))
-           (src   (make-rect (* frame fw) 0 fw fh))
-           (dest  (make-vec2 (exact->inexact (get pos x))
-                             (exact->inexact (get pos y)))))
-      (draw-texture-rec tex src dest white))))
+    (let* ((tex     (asset-ref (get anim texture)))
+           (fw      (get anim frame-w))
+           (fh      (get anim frame-h))
+           (row     (get anim row))
+           (frame   (get anim frame))
+           (scale-x (get anim scale-x))
+           (scale-y (get anim scale-y))
+           (src-x   (* frame fw))
+           (src-y   (* row   fh))
+           (src-w   (* scale-x fw))
+           (src-h   (* scale-y fh))
+           (src     (make-rect (exact->inexact src-x)
+                               (exact->inexact src-y)
+                               (exact->inexact src-w)
+                               (exact->inexact src-h)))
+           (dest    (make-rect (exact->inexact (get pos x))
+                               (exact->inexact (get pos y))
+                               (exact->inexact (* (abs scale-x) fw))
+                               (exact->inexact (* (abs scale-y) fh))))
+           (origin  (make-vec2 0.0 0.0)))
+      (when current-camera (begin-mode-2d current-camera))
+      (draw-texture-pro tex src dest origin 0.0 white)
+      (when current-camera (end-mode-2d)))))

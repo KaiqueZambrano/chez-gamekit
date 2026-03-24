@@ -43,3 +43,21 @@
        (when entry
          ((cdr entry) (car entry))
          (hashtable-delete! assets 'name))))))
+
+(define (unload-all-assets!)
+  (hashtable-for-each assets
+    (lambda (name entry)
+      ((cdr entry) (car entry))))
+  (let ((keys (vector->list (hashtable-keys assets))))
+    (for-each (lambda (k) (hashtable-delete! assets k)) keys)))
+
+(define (unload-assets-except! . keep)
+  (let ((to-remove '()))
+    (hashtable-for-each assets
+      (lambda (name entry)
+        (unless (memq name keep)
+          (set! to-remove (cons (cons name entry) to-remove)))))
+    (for-each (lambda (pair)
+                ((cdr (cdr pair)) (car (cdr pair)))
+                (hashtable-delete! assets (car pair)))
+              to-remove)))
