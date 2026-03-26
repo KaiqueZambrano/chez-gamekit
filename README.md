@@ -1,356 +1,304 @@
 # chez-gamekit
 
-Minimal 2D ECS-based game framework for Chez Scheme, built on top of raylib.
-Built for personal use — simple 2D games. No package system, no dependencies beyond Chez Scheme and raylib.
+Minimal 2D ECS game framework for Chez Scheme, built on raylib.
 
 ## Requirements
 
 - [Chez Scheme](https://cisco.github.io/ChezScheme/)
-- [raylib](https://www.raylib.com/) (tested with `libraylib.so` on Linux)
+- [raylib](https://www.raylib.com/) (`libraylib.so` on Linux)
 
 ## Usage
-
-Copy `chez-gamekit.ss` to your project and load it:
 
 ```scheme
 (load "chez-gamekit.ss")
 ```
 
-## raylib
+## Example
 
-Covers the basics for 2D games:
-
-- Window management (`init-window`, `close-window`, `window-should-close`, `get-screen-width`, `get-screen-height`, etc.)
-- Drawing (`begin-drawing`, `end-drawing`, `clear-background`, `draw-rectangle`, `draw-circle`, `draw-text`, `draw-fps`, `draw-text-centered`, etc.)
-- Textures (`load-texture`, `draw-texture`, `draw-texture-rec`, `draw-texture-pro`)
-- Camera 2D (`begin-mode-2d`, `end-mode-2d`, `make-camera2d`)
-- Keyboard and mouse input — full key constants (`key-a` through `key-z`, `key-up/down/left/right`, F-keys, etc.)
-- Audio (`load-sound`, `play-sound`, `pause-sound`, `resume-sound`, `is-sound-playing`)
-- Timing (`get-frame-time`, `get-time`, `get-fps`)
-
-Foreign memory (`make-vec2`, `make-rect`, `make-color`, `make-camera2d`) is managed automatically via a guardian drained once per frame by the game loop — no manual `free-ptr` calls needed in normal use. `free-ptr` remains available for explicit early release if needed.
-
-## JSON
-
-A self-contained JSON parser. No dependencies.
+A small platformer covering the main features — ECS, sprites, physics, input, camera, tilemaps, and scenes.
 
 ```scheme
-(json-load "data/level.json")   ; parses a file, returns an alist
-(json-parse "{\"x\": 1}")       ; parses a string
-(json-get obj "key")            ; looks up a key in a parsed object
-```
+(load "chez-gamekit.ss")
 
-JSON `null` is represented as the symbol `'null` (not `#f`) to distinguish it from missing keys. Use the provided predicates to check values:
+(define screen-w   400)
+(define screen-h   240)
+(define gravity    800.0)
+(define jump-force -400.0)
+(define walk-speed 120.0)
+(define floor-y    160.0)
 
-```scheme
-(json-null?  v)   ; #t if v is JSON null
-(json-false? v)   ; #t if v is JSON false
-(json-value? v)   ; #t if v is anything other than #f (i.e. key was present)
+(component velocity (vx vy))
+(component grounded)
+(component player)
+
+(scene gameplay
+  (on-enter
+    (load-asset player-idle "idle.png")
+    (load-asset player-run  "running.png")
+    (load-tilemap level "level.json")
+
+    (let ((cam (make-camera 48 100 (/ screen-w 2.0) (/ screen-h 2.0))))
+      (set-camera! cam)
+
+      (spawn
+        (position 48 100)
+        (velocity 0.0 0.0)
+        (player)
+        (sprite player-idle 16 16 0 12 12 1.0 1.0))
+
+      (with-camera cam
+        (render-tilemap level)
+        (render-sprites))
+
+      (system camera-system ((pos : position) (p : player))
+        (camera-follow! cam (get pos x) (get pos y) 0.08)
+        (camera-clamp!  cam (tilemap-width level) (tilemap-height level)))
+
+      (system physics-system ((pos : position) (vel : velocity))
+        (let* ((vy-new (+ (get vel vy) (* gravity dt)))
+               (x-new  (+ (get pos x) (* (get vel vx) dt)))
+               (y-new  (+ (get pos y) (* vy-new dt))))
+          (put! vel vy vy-new)
+          (put! pos x x-new)
+          (if (>= y-new floor-y)
+              (begin
+                (put! pos y floor-y)
+                (put! vel vy 0.0)
+                (unless (has-component? entity-id grounded)
+                  (add-component entity-id grounded)))
+              (begin
+                (put! pos y y-new)
+                (when (has-component? entity-id grounded)
+                  (remove-component entity-id grounded))))))
+
+      (system input-system ((vel : velocity) (spr : sprite) (p : player))
+        (let ((vx 0.0))
+          (when (or (key-down? key-right) (key-down? key-d))
+            (set! vx walk-speed)
+            (put! spr scale-x 1.0))
+          (when (or (key-down? key-left) (key-down? key-a))
+            (set! vx (- walk-speed))
+            (put! spr scale-x -1.0))
+          (if (= vx 0.0)
+              (sprite-texture! spr player-idle)
+              (sprite-texture! spr player-run))
+          (put! vel vx vx)
+          (when (and (or (key-pressed? key-space)
+                         (key-pressed? key-up)
+                         (key-pressed? key-w))
+                     (has-component? entity-id grounded))
+            (put! vel vy jump-force)
+            (remove-component entity-id grounded))))))
+
+  (on-exit
+    (clear-camera!)
+    (unload-all-assets!)))
+
+(game-loop "platformer" screen-w screen-h 60
+  (lambda () (go-to gameplay)))
 ```
 
 ## ECS
 
-A minimal ECS with a DSL. Entities and components are stored in hashtables.
-
-### Basic example
+### Components and entities
 
 ```scheme
-(component position (x y))
-(component velocity (dx dy))
-(component health (hp))
-(component dead)              ; tag — no fields
+(component position (x y))   ; component with fields
+(component grounded)          ; tag — no fields
 
-(entity player (position 0 0) (velocity 1 2) (health 100))
-
-(system movement ((pos : position) (vel : velocity)) not (dead)
-  (put! pos x (+ (get pos x) (get vel dx)))
-  (put! pos y (+ (get pos y) (get vel dy))))
-
-(event hit (target damage))
-
-(on-global hit (target damage)
-  (put! target health hp (- (get target health hp) damage)))
-
-(emit hit (target player) (damage 30))
-
-(run)
+(spawn (position 0 0) (velocity 1.0 0.0))   ; returns entity id
+(despawn id)
 ```
 
-### Scene example
+`spawn` can bind a name at the top level: `(spawn player (position 0 0))` expands to `(define player (spawn ...))`. Inside `on-enter`, use `(define player #f)` + `(set! player (spawn ...))`.
+
+### Systems
 
 ```scheme
-(component position (x y))
-(component velocity (dx dy))
-(component persistent)        ; survives scene transitions
+;;; runs once per entity that has all listed components
+(system name ((var : comp) ...) body ...)
 
-(define player #f)
+;;; with exclusions
+(system name ((var : comp) ...) not (excl ...) body ...)
 
-(event hit (target damage))
+;;; survives scene transitions
+(system name persistent ((var : comp) ...) body ...)
 
-;;; on-global handlers survive go-to — register them outside scenes
-(on-global hit (target damage)
-  (display (list 'hit player 'damage damage)) (newline))
-
-(scene main-menu
-  (on-enter
-    (spawn (position 10 0))
-    (system render-menu ((pos : position))
-      (display (list 'menu-item entity-id)) (newline)))
-  (on-exit
-    (display "leaving menu") (newline)))
-
-(scene gameplay
-  (on-enter
-    (set! player (spawn (position 0 0) (velocity 1 2)))
-    (add-component player persistent)
-    (system movement ((pos : position) (vel : velocity))
-      (put! pos x (+ (get pos x) (get vel dx)))
-      (put! pos y (+ (get pos y) (get vel dy))))
-    (system render ((pos : position))
-      (display (list 'entity entity-id 'pos (get pos x) (get pos y))) (newline)))
-  (on-exit
-    (display "leaving gameplay") (newline)))
-
-(go-to main-menu)
-(run)
-
-(go-to gameplay)
-(run)
-(run)
+;;; runs once per frame, no entity iteration
+(global-system name body ...)
 ```
 
-### ECS API
+Inside a system, `entity-id` is bound to the current entity's id. Systems run in registration order.
 
-| Form | Description |
-|---|---|
-| `(component name (field ...))` | Declares a component type with fields |
-| `(component tag)` | Declares a tag component (no fields) |
-| `(entity name (comp val ...) ...)` | Creates a named entity at top level |
-| `(spawn (comp val ...) ...)` | Creates a dynamic entity, returns id |
-| `(despawn id)` | Removes an entity |
-| `(get comp field)` | Reads a field inside a system |
-| `(get id comp field)` | Reads a field outside a system |
-| `(put! comp field expr)` | Writes a field inside a system |
-| `(put! id comp field expr)` | Writes a field outside a system |
-| `(add-component id comp)` | Adds a tag component to an entity |
-| `(add-component id comp (field val) ...)` | Adds a component with fields |
-| `(remove-component id comp)` | Removes a component from an entity |
-| `(has-component? id comp)` | Returns `#t` if entity has component |
-| `(system name ((var : comp) ...) body ...)` | Defines and registers a system for the current scene |
-| `(system name persistent ((var : comp) ...) body ...)` | Same, but survives scene transitions |
-| `(system name ((var : comp) ...) not (excl ...) body ...)` | System with component exclusions |
-| `(global-system name body ...)` | Registers a system that runs once per frame, without iterating entities |
-| `(event name (field ...))` | Declares an event type and validates `emit` calls against it |
-| `(emit name (field val) ...)` | Enqueues an event |
-| `(on name (field ...) body ...)` | Registers a scene-local event handler |
-| `(on-global name (field ...) body ...)` | Registers a persistent event handler |
-| `(scene name (on-enter body ...) (on-exit body ...))` | Declares a scene |
-| `(go-to name)` | Switches to a scene |
-| `(run)` | Runs all systems, then dispatches events |
+### Reading and writing components
 
-Inside a system, `entity-id` is always bound to the current entity's id.
+```scheme
+(get comp field)             ; inside a system — comp is the bound variable
+(get id comp field)          ; outside a system — id is the entity id
+(put! comp field expr)       ; inside a system
+(put! id comp field expr)    ; outside a system
+```
 
-`entity` only works at the top level — use `define` + `set!` + `spawn` inside `on-enter`.
+### Component membership
 
-Systems and handlers run in registration order (the order they appear inside `on-enter`).
+```scheme
+(add-component id comp)
+(add-component id comp (field val) ...)
+(remove-component id comp)
+(has-component? id comp)
+```
 
-Events emitted during dispatch are enqueued and processed on the next `(run)` call, not the current one.
+### Events
 
-`go-to` clears scene-local systems, event handlers, and the event queue, then removes all non-`persistent` entities. `persistent` systems (registered with the `persistent` keyword) and `on-global` handlers survive transitions. Register `on-global` handlers outside scenes if they need to persist.
+```scheme
+(emit name (field val) ...)
+
+(on name (field ...) body ...)           ; scene-local handler
+(on-global name (field ...) body ...)    ; persists across scene transitions
+```
+
+Events emitted during a frame are dispatched at the end of that frame. `on-global` handlers should be registered outside scenes if they need to persist across `go-to`.
+
+### Scenes
+
+```scheme
+(scene name
+  (on-enter body ...)
+  (on-exit  body ...))
+
+(go-to name)
+```
+
+`go-to` clears scene-local systems, handlers, and the event queue, then despawns all entities that don't have a `persistent` component. Systems registered with `persistent` survive transitions.
 
 ## Assets
 
-An asset cache keyed by symbol. Each entry stores the asset value alongside its unloader, so `unload-asset` always calls the right cleanup function automatically.
-
 ```scheme
-(load-asset player-idle "assets/idle.png")                         ; loads and caches a texture
-(load-asset shoot-sfx "assets/shoot.wav" load-sound unload-sound)  ; custom loader + unloader
-(load-asset! tex-name path)                                         ; dynamic symbol — same as above
-(get-asset player-idle)                                             ; retrieves by literal name
-(asset-ref name)                                                    ; retrieves by runtime symbol
-(unload-asset player-idle)                                          ; calls unloader and removes from cache
-(unload-all-assets!)                                                ; unloads everything
-(unload-assets-except! ui-font cursor)                              ; unloads all except the listed names
+(load-asset name "path/to/file.png")                         ; default: load-texture / unload-texture
+(load-asset name "path/to/file.wav" load-sound unload-sound) ; custom loader and unloader
+(load-asset! sym path)                                        ; same, but name is a runtime symbol
+
+(get-asset name)      ; retrieve by literal name
+(unload-asset name)
+(unload-all-assets!)
+(unload-assets-except! name ...)
 ```
 
-`load-asset` is a macro and requires a literal symbol. Use `load-asset!` when the name is a runtime value (e.g. inside a loop or when loading tilemaps). The default loader is `load-texture` and the default unloader is `unload-texture`.
-
-`unload-all-assets!` and `unload-assets-except!` are useful in `on-exit` when scenes have independent asset sets.
+`load-asset` is idempotent — loading the same name twice is a no-op.
 
 ## Camera
 
-A single global camera controlling the coordinate space for sprite and tilemap rendering. Set it once per scene and everything aligns automatically.
-
 ```scheme
-(make-camera tx ty)                        ; camera centered on screen
-(make-camera tx ty offset-x offset-y)     ; explicit offset, zoom 1.0
+(make-camera tx ty)                        ; offset centered on screen, zoom 1.0
+(make-camera tx ty offset-x offset-y)
 (make-camera tx ty offset-x offset-y zoom)
 
-(set-camera! cam)    ; activate a camera for all render systems
-(clear-camera!)      ; return to screen-space rendering
+(set-camera! cam)    ; activate for all render systems
+(clear-camera!)      ; return to screen-space
 
-(camera-follow! cam x y)        ; snap camera target to position
-(camera-follow! cam x y speed)  ; lerp camera target toward position
-(camera-clamp!  cam world-w world-h)  ; keep camera within world bounds
+(camera-follow! cam x y)         ; snap to position
+(camera-follow! cam x y speed)   ; lerp toward position
+(camera-clamp!  cam world-w world-h)
 (camera-zoom-set! cam z)
 (camera-zoom      cam)
 ```
 
-`current-camera` is `#f` by default (screen-space). Both `(sprites)` inside `render-world` and `render-tilemap` consult it automatically.
-
 ## Sprites
 
-The `sprite` component handles spritesheet animation. The frame-advance system is installed automatically by `game-loop` — no setup needed.
-
-### Component fields
+The `sprite` component fields, in order:
 
 | Field | Description |
 |---|---|
 | `texture` | Asset name symbol |
 | `frame-w` | Frame width in pixels |
 | `frame-h` | Frame height in pixels |
-| `row` | Row in the spritesheet (0-indexed) |
+| `row` | Spritesheet row (0-indexed) |
 | `frames` | Total frames in this animation |
 | `speed` | Frames per second |
-| `scale-x` | Horizontal scale: `1.0` = normal, `-1.0` = flip |
-| `scale-y` | Vertical scale: `1.0` = normal, `-1.0` = flip |
-| `frame` | Current frame — internal state, start at `0` |
-| `elapsed` | Time accumulator — internal state, start at `0.0` |
+| `scale-x` | `1.0` normal, `-1.0` flip horizontally |
+| `scale-y` | `1.0` normal, `-1.0` flip vertically |
 
-### Constructors
+`frame` and `elapsed` are appended automatically if omitted. The animation system is installed by `game-loop` — no setup needed.
 
 ```scheme
-;;; inline — pass all fields directly to spawn
-(spawn
-  (position 0 0)
-  (sprite player-idle 32 32 0 4 8 1.0 1.0 0 0.0))
-
-;;; make-sprite — positional, with defaults
-;;; (make-sprite tex fw fh frames)              row=0, speed=8, scale=1.0
-;;; (make-sprite tex fw fh frames row)
-;;; (make-sprite tex fw fh frames row speed)
-;;; (make-sprite tex fw fh frames row speed scale-x scale-y)
-(spawn
-  (position 0 0)
-  (sprite (make-sprite player-idle 32 32 4)))
-
-;;; make-sprite-set — named animations, switch at runtime
-(define animations
-  (make-sprite-set
-    (idle (make-sprite player-idle 32 32 4))
-    (running (make-sprite player-run  32 32 8 0 12))))
-
-(spawn
-  (position 0 0)
-  (sprite animations))
+;;; swap texture, keeping row/frame/speed
+(sprite-texture! spr-var asset-name)
 ```
 
-### Switching sprites at runtime
+To render sprites, include `(render-sprites)` inside `with-camera`:
 
 ```scheme
-;;; swap texture only — keeps current row, frame, speed
-(sprite-texture! spr player-run)
-
-;;; swap to a named animation in a sprite-set — resets frame to 0
-(switch-sprite! spr run)
-```
-
-### Rendering
-
-Use `render-world` inside `on-enter` to set up the scene's render pass. The `(sprites)` clause draws all entities with both `sprite` and `position` components, respecting `current-camera`.
-
-```scheme
-(render-world cam
-  (render-tilemap level #f)
-  (sprites))
-```
-
-`render-world` accepts any number of expressions interleaved with `(sprites)`, all wrapped in a single `begin-mode-2d` / `end-mode-2d` block.
-
-### Example
-
-```scheme
-(load "chez-gamekit.ss")
-
-(define player #f)
-
-(scene gameplay
-  (on-enter
-    (load-asset player-idle "assets/idle.png")
-    (load-asset player-run  "assets/run.png")
-
-    (set-camera! (make-camera 0 0 200 150))
-
-    (set! player (spawn
-      (position 0 0)
-      (sprite (make-sprite player-idle 32 32 4))))
-
-    (render-world (make-camera 0 0 200 150)
-      (sprites))
-
-    (system input ((pos : position) (spr : sprite))
-      (cond
-        ((is-key-down key-right)
-         (put! pos x (+ (get pos x) 2))
-         (put! spr scale-x  1.0)
-         (sprite-texture! spr player-run))
-        ((is-key-down key-left)
-         (put! pos x (- (get pos x) 2))
-         (put! spr scale-x -1.0)
-         (sprite-texture! spr player-run))
-        (else
-         (sprite-texture! spr player-idle)))))
-  (on-exit
-    (clear-camera!)
-    (unload-all-assets!)))
-
-(game-loop "my game" 400 300 60
-  (lambda () (go-to gameplay)))
-```
-
-## Game loop
-
-Delta time, text input, and the main loop.
-
-| Form | Description |
-|---|---|
-| `dt` | Seconds elapsed since the last frame — updated every frame |
-| `(text-input)` | Returns characters typed this frame as a string — `""` if none |
-| `(game-loop title w h fps)` | Opens a window and runs the main loop |
-| `(game-loop title w h fps init)` | Same, calls `init` thunk once before the loop starts |
-
-The window and audio device are always closed cleanly on exit, even if an error is raised during the loop.
-
-`text-input` is meant for text fields and chat boxes. For game controls, use `is-key-down` / `is-key-pressed` directly.
-
-```scheme
-(define name-buffer "")
-
-(system name-entry ()
-  (set! name-buffer (string-append name-buffer (text-input)))
-  (when (is-key-pressed key-backspace)
-    (when (> (string-length name-buffer) 0)
-      (set! name-buffer
-            (substring name-buffer 0 (- (string-length name-buffer) 1))))))
+(with-camera cam
+  (render-tilemap level)
+  (render-sprites))
 ```
 
 ## Tilemap
 
-Loads and renders [Tiled](https://www.mapeditor.org/) maps exported as JSON. Supports tile layers and object layers. Respects `current-camera` automatically.
+Loads [Tiled](https://www.mapeditor.org/) maps exported as JSON.
 
 ```scheme
-(load-tilemap level1 "assets/level1.json")    ; loads map and all referenced tilesets
-(render-tilemap level1)                        ; draws all visible tile layers
-(render-tilemap level1 camera)                 ; explicit camera override — ignores current-camera
+(load-tilemap name "assets/level.json")
+(render-tilemap name)
 
-(tilemap-width  level1)    ; total pixel width
-(tilemap-height level1)    ; total pixel height
+(tilemap-width  name)
+(tilemap-height name)
 
-(tilemap-objects level1)               ; all objects from all object layers
-(tilemap-objects level1 "spawns")      ; objects from a named layer only
+(tilemap-objects name)            ; all objects from all object layers
+(tilemap-objects name "layer")    ; objects from a named layer
 ```
 
 Object accessors: `obj-x`, `obj-y`, `obj-width`, `obj-height`, `obj-name`, `obj-type`, `obj-id`.
+
+## Input
+
+```scheme
+(key-down?     key)
+(key-pressed?  key)    ; true only on the frame the key was pressed
+(key-released? key)    ; true only on the frame the key was released
+```
+
+Key constants: `key-a` through `key-z`, `key-0` through `key-9`, `key-up`, `key-down`, `key-left`, `key-right`, `key-space`, `key-enter`, `key-escape`, `key-backspace`, `key-f1` through `key-f12`, `key-left-shift`, `key-left-control`, `key-left-alt`, and right-side equivalents.
+
+Mouse: `is-mouse-button-pressed`, `is-mouse-button-down`, `is-mouse-button-released`, `is-mouse-button-up`, `get-mouse-x`, `get-mouse-y`. Button constants: `mouse-button-left`, `mouse-button-right`, `mouse-button-middle`.
+
+For text fields, use `text-input` instead of key polling:
+
+```scheme
+(system name-entry ()
+  (set! buf (string-append buf (text-input)))
+  (when (and (key-pressed? key-backspace) (> (string-length buf) 0))
+    (set! buf (substring buf 0 (- (string-length buf) 1)))))
+```
+
+## Game loop
+
+```scheme
+(game-loop title width height fps)
+(game-loop title width height fps init-thunk)
+```
+
+`dt` is bound to the seconds elapsed since the last frame, updated every frame.
+
+## Drawing
+
+Direct raylib calls, available for custom rendering:
+
+`draw-pixel`, `draw-line`, `draw-circle`, `draw-rectangle`, `draw-rectangle-rec`, `draw-rectangle-lines`, `draw-text`, `draw-text-centered`, `draw-fps`, `draw-texture`, `draw-texture-rec`, `draw-texture-pro`.
+
+Colors: `black`, `white`, `red`, `green`, `blue`, `yellow`, `orange`, `gray`, `darkgray`, `lightgray`, `raywhite`, and more. Custom: `(make-color r g b a)`.
+
+## Audio
+
+```scheme
+(load-asset shoot "shoot.wav" load-sound unload-sound)
+(play-sound  (get-asset shoot))
+(stop-sound  (get-asset shoot))
+(pause-sound (get-asset shoot))
+(resume-sound (get-asset shoot))
+(is-sound-playing (get-asset shoot))
+(set-master-volume 0.8)
+```
 
 ## License
 
